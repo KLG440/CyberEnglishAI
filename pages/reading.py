@@ -5,6 +5,7 @@ Multi-domain articles with AI-powered reading assistance
 
 import streamlit as st
 from core.database import get_db
+from core.articles import get_articles as load_file_articles, get_categories_with_articles
 from core.i18n import t
 from utils.text_analysis import lookup_word
 from core.llm import get_llm_client
@@ -19,8 +20,7 @@ def show():
     db = get_db()
 
     # ── Category selector ──
-    categories = ["All", "Daily News", "Technology", "AI", "Cybersecurity",
-                   "Business", "Science", "Finance", "Culture"]
+    categories = ["All"] + get_categories_with_articles()
 
     col_cat, col_article = st.columns([1, 3])
 
@@ -39,10 +39,7 @@ def show():
 
     with col_article:
         # Load articles
-        if selected_category == "All":
-            articles = db.get_articles()
-        else:
-            articles = db.get_articles(category=selected_category)
+        articles = load_file_articles(category=selected_category)
 
         if not articles:
             st.info(t("read_no_articles").format(selected_category))
@@ -73,33 +70,28 @@ def show():
             with col_meta2:
                 st.markdown(t("read_meta_difficulty").format(article["difficulty"]))
             with col_meta3:
-                st.markdown(t("read_meta_date").format(
-                    article["created_at"][:10] if article.get("created_at") else "—"
-                ))
+                st.markdown(t("read_meta_date").format("📁"))
 
             st.markdown("---")
 
             # Article content (clickable words)
             content = article["content"]
+            article_vocab = article.get("vocabulary", [])
 
             # Split into paragraphs
             paragraphs = content.split("\n\n")
             for para in paragraphs:
-                if para.startswith("Key vocabulary"):
-                    st.markdown(t("read_key_vocab"))
-                    # Extract vocabulary words
-                    vocab_text = para.replace("Key vocabulary:", "").strip()
-                    vocab_words = [v.strip() for v in vocab_text.split(",")]
+                st.markdown(para)
 
-                    cols = st.columns(min(len(vocab_words), 4))
-                    for i, vw in enumerate(vocab_words):
-                        with cols[i % 4]:
-                            word_data = lookup_word(vw.lower())
-                            btn_label = t("read_vocab_btn").format(vw)
-                            if st.button(btn_label, key=f"vocab_{vw}_{article['title']}", use_container_width=True):
-                                st.session_state["reading_vocab_popup"] = vw
-                else:
-                    st.markdown(para)
+            # ── Key vocabulary buttons (from frontmatter) ──
+            if article_vocab:
+                st.markdown(f"### {t('read_key_vocab')}")
+                cols = st.columns(min(len(article_vocab), 4))
+                for i, vw in enumerate(article_vocab):
+                    with cols[i % 4]:
+                        btn_label = t("read_vocab_btn").format(vw)
+                        if st.button(btn_label, key=f"vocab_{vw}_{article['title']}", use_container_width=True):
+                            st.session_state["reading_vocab_popup"] = vw
 
             # ── Word popup ──
             if "reading_vocab_popup" in st.session_state:
